@@ -163,7 +163,7 @@ contract LeaseAgreement is ReentrancyGuard, Ownable {
     }
 
     /**
-     * @notice Update credit check status (called by CRE workflow or oracle)
+     * @notice Update credit check status (called by CRE workflow)
      * @param leaseId Lease ID
      * @param passed Whether credit check passed
      */

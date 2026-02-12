@@ -1065,17 +1065,27 @@ export default function WorldIDAuth({ onSuccess, onError }: WorldIDAuthProps) {
 
 ### Day 7: CRE Workflow - Credit Check
 
+**Prerequisites**:
+- Create account at [cre.chain.link](https://cre.chain.link/)
+- Install CRE CLI: Follow [installation guide](https://docs.chain.link/cre/getting-started/cli-installation)
+
 **Tasks**:
-- Install CRE SDK
-- Create credit check workflow
+- Initialize credit check workflow using CRE CLI
+- Implement workflow with EVM Log Trigger
 - Test with CRE CLI simulation
 - Connect to smart contracts
 
 **Commands**:
 ```bash
 cd cre-workflows
-npm init -y
-npm install @chainlink/cre-sdk axios dotenv
+
+# Initialize workflow using CLI (generates project structure)
+cre init credit-check-workflow --language typescript
+cd credit-check-workflow
+
+# Build and simulate
+cre build
+cre simulate
 ```
 
 **Files to Create**:

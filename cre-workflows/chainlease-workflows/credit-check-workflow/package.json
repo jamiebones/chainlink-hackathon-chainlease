@@ -1,0 +1,22 @@
+{
+  "name": "chainlease-credit-check-workflow",
+  "version": "1.0.0",
+  "description": "Automated credit check workflow for ChainLease rental platform",
+  "main": "dist/main.js",
+  "private": true,
+  "scripts": {
+    "postinstall": "bun x cre-setup",
+    "build": "bun build ./main.ts --outdir ./dist",
+    "dev": "bun run main.ts"
+  },
+  "license": "MIT",
+  "dependencies": {
+    "@chainlink/cre-sdk": "^1.0.9",
+    "viem": "^2.21.54",
+    "zod": "^3.24.1"
+  },
+  "devDependencies": {
+    "@types/bun": "1.2.21",
+    "@types/node": "^22.10.2"
+  }
+}

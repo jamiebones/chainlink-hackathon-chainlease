@@ -1,0 +1,322 @@
+// SPDX-License-Identifier: MIT
+pragma solidity ^0.8.24;
+
+import "@openzeppelin/contracts/utils/ReentrancyGuard.sol";
+import "@openzeppelin/contracts/access/Ownable.sol";
+import "./PropertyNFT.sol";
+
+/**
+ * @title LeaseAgreement
+ * @notice Manages lease lifecycle and state transitions
+ * @dev Integrates with PropertyNFT and World ID verification
+ */
+contract LeaseAgreement is ReentrancyGuard, Ownable {
+    enum LeaseState {
+        Draft,
+        PendingApproval,
+        Active,
+        Completed,
+        Terminated,
+        Disputed
+    }
+
+    struct Lease {
+        uint256 leaseId;
+        uint256 propertyId;
+        address landlord;
+        address tenant;
+        uint256 monthlyRent;
+        uint256 securityDeposit;
+        uint256 startDate;
+        uint256 endDate;
+        uint256 duration; // in days
+        LeaseState state;
+        bytes32 worldIdNullifierHash; // Prevents same tenant applying twice
+        bool creditCheckPassed;
+        uint256 lastPaymentDate;
+        uint256 createdAt;
+    }
+
+    uint256 private _leaseIdCounter;
+    mapping(uint256 => Lease) public leases;
+    mapping(address => uint256[]) public tenantLeases;
+    mapping(address => uint256[]) public landlordLeases;
+    mapping(bytes32 => bool) public usedNullifiers; // World ID nullifier tracking
+    mapping(uint256 => mapping(uint256 => bool))
+        public propertyTenantApplications; // propertyId => tenantAddress hash => applied
+
+    PropertyNFT public propertyNFT;
+    address public paymentEscrow;
+    address public worldIdVerifier;
+
+    event LeaseCreated(
+        uint256 indexed leaseId,
+        uint256 indexed propertyId,
+        address indexed tenant,
+        uint256 monthlyRent
+    );
+
+    event LeaseStateChanged(
+        uint256 indexed leaseId,
+        LeaseState oldState,
+        LeaseState newState
+    );
+
+    event CreditCheckCompleted(uint256 indexed leaseId, bool passed);
+
+    event LeaseActivated(
+        uint256 indexed leaseId,
+        uint256 startDate,
+        uint256 endDate
+    );
+
+    constructor(address _propertyNFT) Ownable(msg.sender) {
+        require(_propertyNFT != address(0), "Invalid PropertyNFT address");
+        propertyNFT = PropertyNFT(_propertyNFT);
+    }
+
+    /**
+     * @notice Set PaymentEscrow contract address
+     * @param _paymentEscrow PaymentEscrow contract address
+     */
+    function setPaymentEscrow(address _paymentEscrow) external onlyOwner {
+        require(_paymentEscrow != address(0), "Invalid address");
+        paymentEscrow = _paymentEscrow;
+    }
+
+    /**
+     * @notice Set WorldIDVerifier contract address
+     * @param _worldIdVerifier WorldIDVerifier contract address
+     */
+    function setWorldIdVerifier(address _worldIdVerifier) external onlyOwner {
+        require(_worldIdVerifier != address(0), "Invalid address");
+        worldIdVerifier = _worldIdVerifier;
+    }
+
+    /**
+     * @notice Create a new lease application
+     * @param propertyId Property NFT ID
+     * @param duration Lease duration in days
+     * @param worldIdNullifierHash World ID nullifier to prevent double-application
+     * @return leaseId New lease ID
+     */
+    function createLease(
+        uint256 propertyId,
+        uint256 duration,
+        bytes32 worldIdNullifierHash
+    ) public nonReentrant returns (uint256) {
+        require(worldIdNullifierHash != bytes32(0), "Invalid nullifier");
+        require(
+            !usedNullifiers[worldIdNullifierHash],
+            "Already applied with this identity"
+        );
+        require(duration >= 30 && duration <= 3650, "Duration: 30-3650 days");
+
+        // Verify property exists and is listed
+        address landlord = propertyNFT.ownerOf(propertyId);
+        require(landlord != address(0), "Property does not exist");
+
+        PropertyNFT.PropertyMetadata memory property = propertyNFT
+            .getPropertyMetadata(propertyId);
+        require(property.isListed, "Property not listed");
+        require(landlord != msg.sender, "Cannot lease own property");
+
+        // Check if tenant already applied for this property
+        uint256 tenantHash = uint256(keccak256(abi.encodePacked(msg.sender)));
+        require(
+            !propertyTenantApplications[propertyId][tenantHash],
+            "Already applied for this property"
+        );
+
+        _leaseIdCounter++;
+        uint256 newLeaseId = _leaseIdCounter;
+
+        leases[newLeaseId] = Lease({
+            leaseId: newLeaseId,
+            propertyId: propertyId,
+            landlord: landlord,
+            tenant: msg.sender,
+            monthlyRent: property.monthlyRent,
+            securityDeposit: property.monthlyRent * 2, // Default: 2 months rent
+            startDate: 0,
+            endDate: 0,
+            duration: duration,
+            state: LeaseState.Draft,
+            worldIdNullifierHash: worldIdNullifierHash,
+            creditCheckPassed: false,
+            lastPaymentDate: 0,
+            createdAt: block.timestamp
+        });
+
+        usedNullifiers[worldIdNullifierHash] = true;
+        propertyTenantApplications[propertyId][tenantHash] = true;
+        tenantLeases[msg.sender].push(newLeaseId);
+        landlordLeases[landlord].push(newLeaseId);
+
+        emit LeaseCreated(
+            newLeaseId,
+            propertyId,
+            msg.sender,
+            property.monthlyRent
+        );
+        return newLeaseId;
+    }
+
+    /**
+     * @notice Update credit check status (called by CRE workflow or oracle)
+     * @param leaseId Lease ID
+     * @param passed Whether credit check passed
+     */
+    function updateCreditCheckStatus(uint256 leaseId, bool passed) public {
+        require(
+            msg.sender == owner() || msg.sender == address(this),
+            "Not authorized"
+        );
+        Lease storage lease = leases[leaseId];
+        require(lease.state == LeaseState.Draft, "Invalid state");
+
+        lease.creditCheckPassed = passed;
+
+        if (passed) {
+            lease.state = LeaseState.PendingApproval;
+            emit LeaseStateChanged(
+                leaseId,
+                LeaseState.Draft,
+                LeaseState.PendingApproval
+            );
+        }
+
+        emit CreditCheckCompleted(leaseId, passed);
+    }
+
+    /**
+     * @notice Activate lease after credit check and deposit
+     * @param leaseId Lease ID
+     */
+    function activateLease(uint256 leaseId) public nonReentrant {
+        Lease storage lease = leases[leaseId];
+        require(lease.state == LeaseState.PendingApproval, "Invalid state");
+        require(lease.creditCheckPassed, "Credit check not passed");
+        require(msg.sender == lease.landlord, "Only landlord can activate");
+
+        // TODO: Verify deposit received from PaymentEscrow
+
+        lease.state = LeaseState.Active;
+        lease.startDate = block.timestamp;
+        lease.endDate = block.timestamp + (lease.duration * 1 days);
+        lease.lastPaymentDate = block.timestamp;
+
+        emit LeaseStateChanged(
+            leaseId,
+            LeaseState.PendingApproval,
+            LeaseState.Active
+        );
+        emit LeaseActivated(leaseId, lease.startDate, lease.endDate);
+    }
+
+    /**
+     * @notice Record rent payment (called by PaymentEscrow or CRE workflow)
+     * @param leaseId Lease ID
+     */
+    function recordPayment(uint256 leaseId) public {
+        require(
+            msg.sender == paymentEscrow || msg.sender == owner(),
+            "Not authorized"
+        );
+        Lease storage lease = leases[leaseId];
+        require(lease.state == LeaseState.Active, "Lease not active");
+
+        lease.lastPaymentDate = block.timestamp;
+    }
+
+    /**
+     * @notice Complete lease
+     * @param leaseId Lease ID
+     */
+    function completeLease(uint256 leaseId) public nonReentrant {
+        Lease storage lease = leases[leaseId];
+        require(lease.state == LeaseState.Active, "Lease not active");
+        require(
+            msg.sender == lease.landlord || msg.sender == lease.tenant,
+            "Not authorized"
+        );
+        require(block.timestamp >= lease.endDate, "Lease term not ended");
+
+        lease.state = LeaseState.Completed;
+        emit LeaseStateChanged(
+            leaseId,
+            LeaseState.Active,
+            LeaseState.Completed
+        );
+    }
+
+    /**
+     * @notice Terminate lease early
+     * @param leaseId Lease ID
+     */
+    function terminateLease(uint256 leaseId) public nonReentrant {
+        Lease storage lease = leases[leaseId];
+        require(lease.state == LeaseState.Active, "Lease not active");
+        require(msg.sender == lease.landlord, "Only landlord can terminate");
+
+        lease.state = LeaseState.Terminated;
+        emit LeaseStateChanged(
+            leaseId,
+            LeaseState.Active,
+            LeaseState.Terminated
+        );
+    }
+
+    /**
+     * @notice Get lease details
+     * @param leaseId Lease ID
+     * @return Lease struct
+     */
+    function getLease(uint256 leaseId) public view returns (Lease memory) {
+        return leases[leaseId];
+    }
+
+    /**
+     * @notice Get all leases for a tenant
+     * @param tenant Tenant address
+     * @return Array of lease IDs
+     */
+    function getTenantLeases(
+        address tenant
+    ) public view returns (uint256[] memory) {
+        return tenantLeases[tenant];
+    }
+
+    /**
+     * @notice Get all leases for a landlord
+     * @param landlord Landlord address
+     * @return Array of lease IDs
+     */
+    function getLandlordLeases(
+        address landlord
+    ) public view returns (uint256[] memory) {
+        return landlordLeases[landlord];
+    }
+
+    /**
+     * @notice Check if lease is overdue for payment
+     * @param leaseId Lease ID
+     * @return True if overdue
+     */
+    function isPaymentOverdue(uint256 leaseId) public view returns (bool) {
+        Lease memory lease = leases[leaseId];
+        if (lease.state != LeaseState.Active) return false;
+
+        uint256 daysSincePayment = (block.timestamp - lease.lastPaymentDate) /
+            1 days;
+        return daysSincePayment >= 30;
+    }
+
+    /**
+     * @notice Get total number of leases
+     * @return Total count
+     */
+    function totalLeases() public view returns (uint256) {
+        return _leaseIdCounter;
+    }
+}

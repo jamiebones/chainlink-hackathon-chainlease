@@ -1068,6 +1068,7 @@ export default function WorldIDAuth({ onSuccess, onError }: WorldIDAuthProps) {
 **Prerequisites**:
 - Create account at [cre.chain.link](https://cre.chain.link/)
 - Install CRE CLI: Follow [installation guide](https://docs.chain.link/cre/getting-started/cli-installation)
+- **⚠️ Important**: DON nodes cannot reach localhost - plan to deploy backend API to a public URL (Railway, Render, ngrok) before DON deployment
 
 **Tasks**:
 - Initialize credit check workflow using CRE CLI
@@ -1600,6 +1601,75 @@ cre deploy --network ethereum-sepolia
 cre test --workflow credit-check-oracle
 ```
 
+**⚠️ CRITICAL: Backend API Accessibility for DON**
+
+The Decentralized Oracle Network (DON) nodes **cannot reach localhost endpoints**. Your CRE workflows will fail if configured with `http://localhost:3000`.
+
+**Solutions**:
+
+1. **For Local Testing/Simulation**:
+   - Use `cre workflow simulate` - runs locally and CAN reach localhost
+   - Perfect for development and testing workflow logic
+
+2. **For DON Deployment** (Required for production):
+   
+   **Option A: ngrok (Quick Testing)**
+   ```bash
+   # Install ngrok
+   npm install -g ngrok
+   
+   # Start backend
+   cd backend && npm start
+   
+   # In another terminal, expose it
+   ngrok http 3000
+   # Use the https://xxxx.ngrok.io URL in your config
+   ```
+
+   **Option B: Cloud Deployment (Production)**
+   Deploy backend to:
+   - **Railway**: `railway up` (easiest)
+   - **Render**: Free tier available
+   - **Fly.io**: Quick deployment
+   - **Vercel**: Serverless functions
+   - **AWS/GCP/Azure**: Full control
+   
+   Update `config.staging.json` and `config.production.json`:
+   ```json
+   {
+     "creditCheckApi": {
+       "endpoint": "https://your-app.railway.app/api/credit-check/verify",
+       "apiKey": "CREDIT_API_KEY"
+     },
+     "backendApi": {
+       "endpoint": "https://your-app.railway.app/api/data/credit-checks"
+     }
+   }
+   ```
+
+3. **Deployment Workflow**:
+   ```bash
+   # 1. Deploy backend to cloud
+   cd backend
+   railway up  # or your chosen platform
+   
+   # 2. Update CRE workflow configs with public URL
+   cd ../cre-workflows/chainlease-workflows/credit-check-workflow
+   # Edit config.staging.json with deployed URL
+   
+   # 3. Deploy CRE workflow to DON
+   cre workflow deploy --target staging-settings
+   
+   # 4. Test end-to-end with public URL
+   cre workflow run --workflow-id <your-workflow-id>
+   ```
+
+**Key Points**:
+- ✅ Localhost works for `cre workflow simulate` (local simulation)
+- ❌ Localhost FAILS for DON deployment (remote execution)
+- 🚀 Always deploy backend first, then update CRE configs
+- 🔒 Use environment variables for production API keys
+
 ### Frontend (Vercel)
 ```bash
 cd frontend
@@ -1654,6 +1724,7 @@ vercel --prod
 | Privacy features delayed | Build without, add later | Document intent, show design |
 | World ID integration issues | Use simulator extensively | Mock verification as fallback |
 | Deployment problems | Test on local network first | Deploy to Base if Sepolia issues |
+| DON cannot reach localhost | Deploy backend to cloud (Railway/Render) early | Use ngrok for testing, cloud for production |
 
 ### Scope Risks
 | Risk | Mitigation | Backup Plan |

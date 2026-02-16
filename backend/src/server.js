@@ -9,6 +9,9 @@ import dotenv from 'dotenv';
 import { connectToDatabase } from './services/database.js';
 import creditCheckRouter from './api/credit-check.js';
 import dataRouter from './api/data.js';
+import emailRouter from './api/send-email.js';
+import usersRouter from './api/users.js';
+import { handleLeaseActivatedNotification } from './api/notifications.js';
 
 dotenv.config();
 
@@ -41,6 +44,11 @@ app.get('/health', (req, res) => {
 // API Routes
 app.use('/api/credit-check', creditCheckRouter);
 app.use('/api/data', dataRouter);
+app.use('/api/send-email', emailRouter);
+app.use('/api/users', usersRouter);
+
+// CRE Workflow notification endpoint
+app.post('/api/notifications/lease-activated', handleLeaseActivatedNotification);
 
 // 404 handler
 app.use((req, res) => {
@@ -66,6 +74,7 @@ const startServer = async () => {
             console.log(`📍 Health check: http://localhost:${PORT}/health`);
             console.log(`🔍 Credit Check: http://localhost:${PORT}/api/credit-check/verify`);
             console.log(`💾 Data API: http://localhost:${PORT}/api/data/credit-checks`);
+            console.log(`📧 Email API: http://localhost:${PORT}/api/send-email`);
         });
     } catch (error) {
         console.error('❌ Failed to start server:', error);

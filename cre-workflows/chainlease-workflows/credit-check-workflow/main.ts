@@ -2,7 +2,9 @@
 // Entry point for the ChainLease credit check workflow.
 // Monitors LeaseCreated events and automates tenant credit verification.
 
-import { cre, type Runtime, type NodeRuntime, Runner, getNetwork, bytesToHex, EVMLog, HTTPClient, consensusMedianAggregation } from "@chainlink/cre-sdk";
+import { cre, type Runtime, type NodeRuntime, 
+  Runner, getNetwork, bytesToHex, EVMLog, 
+  HTTPClient, consensusMedianAggregation } from "@chainlink/cre-sdk";
 import { keccak256, toHex, decodeEventLog } from "viem";
 import { configSchema, type Config, type CreditCheckResponse, leaseCreatedEventArgsSchema } from "./types";
 import { fetchCreditCheck } from "./credit-check";
@@ -98,25 +100,25 @@ const onLeaseCreatedTrigger = (runtime: Runtime<Config>, log: EVMLog): string =>
     // See credit-check.ts for implementation.
 
     runtime.log(`Initiating credit check for tenant: ${tenant}`);
-    
+
     // Execute credit check with consensus on the credit score
     const fetchScore = (nodeRuntime: NodeRuntime<Config>): number => {
       const result = fetchCreditCheck(nodeRuntime, leaseId.toString(), tenant);
       return result.creditScore;
     };
-    
+
     const creditScore = runtime.runInNodeMode(
       fetchScore,
       consensusMedianAggregation()
     )().result();
 
-    // Fetch full details (deterministic based on consensus score)
+  
     const creditCheckResult: CreditCheckResponse = fetchCreditCheck(
       { config: runtime.config } as NodeRuntime<Config>,
       leaseId.toString(),
       tenant
     );
-    
+
     // Update score with consensus value
     creditCheckResult.creditScore = Number(creditScore);
 
@@ -147,7 +149,7 @@ const onLeaseCreatedTrigger = (runtime: Runtime<Config>, log: EVMLog): string =>
 
     if (runtime.config.backendApi) {
       runtime.log("Saving credit check data to database...");
-      
+
       const statusCode = runtime.runInNodeMode(
         (nodeRuntime) => saveToBackend(nodeRuntime, {
           leaseId: leaseId.toString(),
@@ -165,7 +167,7 @@ const onLeaseCreatedTrigger = (runtime: Runtime<Config>, log: EVMLog): string =>
 
       runtime.log(`Database save completed with status: ${statusCode}`);
     }
-    
+
     runtime.log("=== Credit Check Workflow Completed Successfully ===");
 
     return `Credit check completed for lease ${leaseId.toString()}: ${creditCheckResult.passed ? "APPROVED" : "DENIED"}`;

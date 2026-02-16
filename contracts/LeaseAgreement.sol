@@ -1,16 +1,17 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.24;
 
-import "@openzeppelin/contracts/utils/ReentrancyGuard.sol";
-import "@openzeppelin/contracts/access/Ownable.sol";
+import {ReentrancyGuard} from "@openzeppelin/contracts/utils/ReentrancyGuard.sol";
+import {ReceiverTemplate} from "./interfaces/ReceiverTemplate.sol";
 import "./PropertyNFT.sol";
 
 /**
  * @title LeaseAgreement
  * @notice Manages lease lifecycle and state transitions
- * @dev Integrates with PropertyNFT and World ID verification
+ * @dev Integrates with PropertyNFT, World ID verification, and Chainlink CRE workflows
+ * @dev Inherits from ReceiverTemplate to accept credit check results from CRE workflows
  */
-contract LeaseAgreement is ReentrancyGuard, Ownable {
+contract LeaseAgreement is ReentrancyGuard, ReceiverTemplate {
     enum LeaseState {
         Draft,
         PendingApproval,
@@ -33,6 +34,7 @@ contract LeaseAgreement is ReentrancyGuard, Ownable {
         LeaseState state;
         bytes32 worldIdNullifierHash; // Prevents same tenant applying twice
         bool creditCheckPassed;
+        string verificationId; // External credit check verification ID for audit trail
         uint256 lastPaymentDate;
         uint256 createdAt;
     }
@@ -62,15 +64,29 @@ contract LeaseAgreement is ReentrancyGuard, Ownable {
         LeaseState newState
     );
 
-    event CreditCheckCompleted(uint256 indexed leaseId, bool passed);
+    event CreditCheckCompleted(
+        uint256 indexed leaseId,
+        bool passed,
+        string verificationId
+    );
 
     event LeaseActivated(
         uint256 indexed leaseId,
+        address indexed tenant,
+        address indexed landlord,
+        uint256 propertyId,
         uint256 startDate,
-        uint256 endDate
+        uint256 endDate,
+        uint256 monthlyRent
     );
 
-    constructor(address _propertyNFT) Ownable(msg.sender) {
+    /// @notice Constructor initializes the contract with PropertyNFT and Forwarder addresses
+    /// @param _propertyNFT Address of the PropertyNFT contract
+    /// @param _forwarderAddress Address of the Chainlink Forwarder contract for CRE workflows
+    constructor(
+        address _propertyNFT,
+        address _forwarderAddress
+    ) ReceiverTemplate(_forwarderAddress) {
         require(_propertyNFT != address(0), "Invalid PropertyNFT address");
         propertyNFT = PropertyNFT(_propertyNFT);
     }
@@ -144,6 +160,7 @@ contract LeaseAgreement is ReentrancyGuard, Ownable {
             state: LeaseState.Draft,
             worldIdNullifierHash: worldIdNullifierHash,
             creditCheckPassed: false,
+            verificationId: "",
             lastPaymentDate: 0,
             createdAt: block.timestamp
         });
@@ -163,19 +180,36 @@ contract LeaseAgreement is ReentrancyGuard, Ownable {
     }
 
     /**
-     * @notice Update credit check status (called by CRE workflow)
+     * @notice Internal hook to process credit check reports from ReceiverTemplate
+     * @dev Decodes ABI-encoded data and updates credit check status
+     * @param report ABI-encoded data containing (uint256 leaseId, bool passed, string verificationId)
+     */
+    function _processReport(bytes calldata report) internal override {
+        // Decode the report data
+        (uint256 leaseId, bool passed, string memory verificationId) = abi
+            .decode(report, (uint256, bool, string));
+
+        // Process the credit check result
+        _updateCreditCheckStatus(leaseId, passed, verificationId);
+    }
+
+    /**
+     * @notice Internal function to update credit check status
      * @param leaseId Lease ID
      * @param passed Whether credit check passed
+     * @param verificationId External verification ID for audit trail
      */
-    function updateCreditCheckStatus(uint256 leaseId, bool passed) public {
-        require(
-            msg.sender == owner() || msg.sender == address(this),
-            "Not authorized"
-        );
+    function _updateCreditCheckStatus(
+        uint256 leaseId,
+        bool passed,
+        string memory verificationId
+    ) internal {
         Lease storage lease = leases[leaseId];
+        require(lease.leaseId != 0, "Lease does not exist");
         require(lease.state == LeaseState.Draft, "Invalid state");
 
         lease.creditCheckPassed = passed;
+        lease.verificationId = verificationId;
 
         if (passed) {
             lease.state = LeaseState.PendingApproval;
@@ -186,7 +220,22 @@ contract LeaseAgreement is ReentrancyGuard, Ownable {
             );
         }
 
-        emit CreditCheckCompleted(leaseId, passed);
+        emit CreditCheckCompleted(leaseId, passed, verificationId);
+    }
+
+    /**
+     * @notice Manual override for credit check status (owner only)
+     * @dev For emergency use or testing purposes
+     * @param leaseId Lease ID
+     * @param passed Whether credit check passed
+     * @param verificationId Verification ID for audit trail
+     */
+    function manualCreditCheckOverride(
+        uint256 leaseId,
+        bool passed,
+        string memory verificationId
+    ) external onlyOwner {
+        _updateCreditCheckStatus(leaseId, passed, verificationId);
     }
 
     /**
@@ -211,7 +260,15 @@ contract LeaseAgreement is ReentrancyGuard, Ownable {
             LeaseState.PendingApproval,
             LeaseState.Active
         );
-        emit LeaseActivated(leaseId, lease.startDate, lease.endDate);
+        emit LeaseActivated(
+            leaseId,
+            lease.tenant,
+            lease.landlord,
+            lease.propertyId,
+            lease.startDate,
+            lease.endDate,
+            lease.monthlyRent
+        );
     }
 
     /**

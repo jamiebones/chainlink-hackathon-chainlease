@@ -1,0 +1,22 @@
+{
+    "name": "lease-notification-workflow",
+    "version": "1.0.0",
+    "description": "CRE workflow for sending lease activation email notifications",
+    "type": "module",
+    "main": "main.ts",
+    "scripts": {
+        "build": "tsc",
+        "simulate": "cre workflow simulate --config config.staging.json",
+        "deploy:staging": "cre workflow deploy --config config.staging.json --target staging",
+        "deploy:prod": "cre workflow deploy --config config.production.json --target production"
+    },
+    "dependencies": {
+        "@chainlink/cre-sdk": "^1.0.9",
+        "viem": "^2.0.0",
+        "zod": "^3.22.0"
+    },
+    "devDependencies": {
+        "@types/node": "^20.0.0",
+        "typescript": "^5.0.0"
+    }
+}

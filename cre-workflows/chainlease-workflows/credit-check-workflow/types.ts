@@ -8,13 +8,12 @@ import { z } from "zod";
  * Validated by CRE at runtime
  */
 export const configSchema = z.object({
-    evms: z.array(
+    evms:
         z.object({
             chainSelectorName: z.string(),
             leaseAgreementAddress: z.string(),
             gasLimit: z.string(),
-        })
-    ),
+        }),
     creditCheckApi: z.object({
         endpoint: z.string(),
         apiKey: z.string(),
@@ -50,7 +49,6 @@ export interface CreditCheckResponse {
     passed: boolean;
     riskLevel: "low" | "medium" | "high";
     verificationId: string;
-    timestamp: number;
     statusCode: number;
     details?: {
         paymentHistory?: string;
@@ -59,3 +57,9 @@ export interface CreditCheckResponse {
         evictions?: number;
     };
 }
+
+export type LeaseData = {
+    leaseId: bigint;
+    propertyId: bigint;
+    tenantAddress: string;
+};

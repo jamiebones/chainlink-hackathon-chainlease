@@ -235,4 +235,52 @@ contract PaymentEscrow is ReentrancyGuard, Ownable {
     function hasDeposit(uint256 leaseId) external view returns (bool) {
         return escrows[leaseId].depositAmount > 0;
     }
+
+    /**
+     * @notice Collect rent from tenant (called by CRE workflow or authorized party)
+     * @dev This function is designed to be called by the automated rent collection workflow
+     * @param leaseId Lease ID
+     * @param tenant Expected tenant address (for validation)
+     * @param landlord Landlord address to receive payment
+     * @param amount Base rent amount
+     * @param lateFee Late fee amount (if applicable)
+     * @return bool Success status
+     */
+    function collectRent(
+        uint256 leaseId,
+        address tenant,
+        address landlord,
+        uint256 amount,
+        uint256 lateFee
+    ) external payable nonReentrant returns (bool) {
+        require(
+            msg.sender == owner() || msg.sender == leaseAgreementContract,
+            "Not authorized"
+        );
+        require(tenant != address(0), "Invalid tenant");
+        require(landlord != address(0), "Invalid landlord");
+        require(amount > 0, "Amount must be > 0");
+
+        uint256 totalAmount = amount + lateFee;
+        require(msg.value >= totalAmount, "Insufficient payment");
+
+        // Record payment
+        paymentHistory[leaseId].push(block.timestamp);
+        totalPaid[leaseId] += totalAmount;
+
+        // Transfer to landlord
+        (bool success, ) = payable(landlord).call{value: totalAmount}("");
+        require(success, "Transfer to landlord failed");
+
+        // Refund any excess payment
+        if (msg.value > totalAmount) {
+            (bool refundSuccess, ) = payable(msg.sender).call{
+                value: msg.value - totalAmount
+            }("");
+            require(refundSuccess, "Refund failed");
+        }
+
+        emit RentPaid(leaseId, tenant, totalAmount, block.timestamp);
+        return true;
+    }
 }

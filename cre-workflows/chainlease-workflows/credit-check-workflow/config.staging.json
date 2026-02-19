@@ -1,11 +1,10 @@
 {
-  "evms": [
+  "evms": 
     {
       "chainSelectorName": "ethereum-testnet-sepolia",
       "leaseAgreementAddress": "0x0000000000000000000000000000000000000000",
       "gasLimit": "500000"
-    }
-  ],
+    },
   "creditCheckApi": {
     "endpoint": "http://localhost:3000/api/credit-check/verify",
     "apiKey": "CREDIT_API_KEY"

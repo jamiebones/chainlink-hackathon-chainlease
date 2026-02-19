@@ -1,0 +1,53 @@
+name: rent-collection-workflow
+version: 1.0.0
+description: Automated monthly rent collection for active leases
+
+# Time-based trigger: Run daily at 00:00 UTC
+trigger:
+  type: time
+  schedule:
+    cron: "0 0 * * *"  # Daily at midnight UTC
+    timezone: "UTC"
+
+# Workflow entry point
+handler:
+  file: ./main.ts
+  function: default
+
+# Environment configuration
+environment:
+  - LEASE_AGREEMENT_ADDRESS
+  - PAYMENT_ESCROW_ADDRESS
+  - RPC_URL
+  - CHAIN_ID
+  - PRIVATE_KEY
+  - COLLECTION_DAY
+  - GRACE_PERIOD_DAYS
+  - LATE_FEE_PERCENTAGE
+  - MAX_RETRIES
+  - BACKEND_API_URL
+  - BACKEND_API_KEY
+
+# Resource limits
+resources:
+  memoryMB: 512
+  timeoutSeconds: 300
+
+# SDK configuration
+sdk:
+  version: "latest"
+  features:
+    - http
+    - blockchain
+    - time
+
+# Monitoring
+monitoring:
+  enabled: true
+  alerts:
+    - type: error
+      threshold: 3
+      window: 1h
+    - type: timeout
+      threshold: 1
+      window: 1h

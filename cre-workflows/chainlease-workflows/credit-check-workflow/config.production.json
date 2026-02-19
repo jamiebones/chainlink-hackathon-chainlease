@@ -1,11 +1,9 @@
 {
-  "evms": [
-    {
-      "chainSelectorName": "ethereum-mainnet",
-      "leaseAgreementAddress": "0x0000000000000000000000000000000000000000",
-      "gasLimit": "500000"
-    }
-  ],
+  "evms": {
+    "chainSelectorName": "ethereum-mainnet",
+    "leaseAgreementAddress": "0x0000000000000000000000000000000000000000",
+    "gasLimit": "500000"
+  },
   "creditCheckApi": {
     "endpoint": "https://api.creditcheck.example.com/v1/verify",
     "apiKey": "CREDIT_API_KEY"

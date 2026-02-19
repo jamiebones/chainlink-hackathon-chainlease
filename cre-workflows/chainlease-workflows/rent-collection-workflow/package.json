@@ -1,0 +1,34 @@
+{
+    "name": "rent-collection-workflow",
+    "version": "1.0.0",
+    "description": "Automated monthly rent collection workflow using Chainlink Runtime Environment",
+    "type": "module",
+    "main": "main.ts",
+    "scripts": {
+        "build": "tsc",
+        "simulate": "cre simulate --workflow workflow.yaml --config config.staging.json",
+        "deploy:staging": "cre deploy --workflow workflow.yaml --config config.staging.json --env staging",
+        "deploy:production": "cre deploy --workflow workflow.yaml --config config.production.json --env production",
+        "test": "node --loader ts-node/esm main.ts"
+    },
+    "dependencies": {
+        "@chainlink/cre-sdk": "^1.0.0",
+        "viem": "^2.43.0",
+        "zod": "^3.22.4",
+        "dotenv": "^17.2.4"
+    },
+    "devDependencies": {
+        "@types/node": "^22.8.5",
+        "typescript": "~5.8.0"
+    },
+    "keywords": [
+        "chainlink",
+        "cre",
+        "real-estate",
+        "rent-collection",
+        "automation",
+        "smart-contracts"
+    ],
+    "author": "ChainLease Team",
+    "license": "MIT"
+}

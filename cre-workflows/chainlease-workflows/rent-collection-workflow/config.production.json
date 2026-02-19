@@ -1,0 +1,14 @@
+{
+    "evms": [
+        {
+            "chainSelectorName": "ethereum-testnet-sepolia",
+            "leaseAgreementAddress": "0x0000000000000000000000000000000000000000",
+            "consumerContractAddress": "0x0000000000000000000000000000000000000000",
+            "gasLimit": "300000"
+        }
+    ],
+    "gracePeriodDays": 3,
+    "lateFeePercentage": 5,
+    "backendApiUrl": "https://your-backend.railway.app",
+    "backendApiKey": "production-api-key"
+}

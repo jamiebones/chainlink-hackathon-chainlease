@@ -376,4 +376,31 @@ contract LeaseAgreement is ReentrancyGuard, ReceiverTemplate {
     function totalLeases() public view returns (uint256) {
         return _leaseIdCounter;
     }
+
+    /**
+     * @notice Get all active leases
+     * @dev Used by CRE rent collection workflow to fetch leases requiring payment
+     * @return Array of active lease IDs
+     */
+    function getActiveLeases() public view returns (uint256[] memory) {
+        // Count active leases first
+        uint256 activeCount = 0;
+        for (uint256 i = 1; i <= _leaseIdCounter; i++) {
+            if (leases[i].state == LeaseState.Active) {
+                activeCount++;
+            }
+        }
+
+        // Create array of active lease IDs
+        uint256[] memory activeLeaseIds = new uint256[](activeCount);
+        uint256 index = 0;
+        for (uint256 i = 1; i <= _leaseIdCounter; i++) {
+            if (leases[i].state == LeaseState.Active) {
+                activeLeaseIds[index] = i;
+                index++;
+            }
+        }
+
+        return activeLeaseIds;
+    }
 }

@@ -66,6 +66,7 @@ contract LeaseAgreement is ReentrancyGuard, ReceiverTemplate {
 
     event CreditCheckCompleted(
         uint256 indexed leaseId,
+        uint256 indexed propertyId,
         bool passed,
         string verificationId
     );
@@ -220,7 +221,12 @@ contract LeaseAgreement is ReentrancyGuard, ReceiverTemplate {
             );
         }
 
-        emit CreditCheckCompleted(leaseId, passed, verificationId);
+        emit CreditCheckCompleted(
+            leaseId,
+            lease.propertyId,
+            passed,
+            verificationId
+        );
     }
 
     /**

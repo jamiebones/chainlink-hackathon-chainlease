@@ -1,5 +1,4 @@
 // evm.ts
-// EVM smart contract interactions
 
 import { type Runtime, EVMClient, getNetwork, hexToBase64, bytesToHex } from "@chainlink/cre-sdk";
 import { encodeAbiParameters, parseAbiParameters } from "viem";
@@ -8,11 +7,7 @@ import type { Config } from "./types";
 /**
  * Submits credit check results back to the LeaseAgreement consumer contract
  * 
- * Uses CRE's report + writeReport pattern:
- * 1. Encode credit check data as ABI parameters
- * 2. Generate signed report with runtime.report()
- * 3. Submit report to consumer contract with writeReport()
- * 
+
  * @param runtime - CRE runtime with config and secrets
  * @param leaseId - Lease ID
  * @param passed - Whether the credit check passed
@@ -27,9 +22,7 @@ export function submitCreditCheckResult(
 ): string {
     runtime.log(`Submitting credit check result for lease ${leaseId.toString()}: ${passed}`);
     runtime.log(`Verification ID: ${verificationId}`);
-
-    const evmConfig = runtime.config.evms[0];
-
+    const evmConfig = runtime.config.evms;
     // Get the target network
     const network = getNetwork({
         chainFamily: "evm",
@@ -44,7 +37,6 @@ export function submitCreditCheckResult(
     // Create EVM client
     const evmClient = new EVMClient(network.chainSelector.selector);
 
-    // Encode credit check data according to consumer contract's ABI
     // The consumer contract expects: (uint256 leaseId, bool passed, string verificationId)
     const reportData = encodeAbiParameters(
         parseAbiParameters("uint256 leaseId, bool passed, string verificationId"),
@@ -54,32 +46,37 @@ export function submitCreditCheckResult(
     runtime.log(`Writing report to consumer contract at ${evmConfig.leaseAgreementAddress}`);
 
     // Step 1: Generate a signed report using the consensus capability
-    const reportResponse = runtime
-        .report({
-            encodedPayload: hexToBase64(reportData),
-            encoderName: "evm",
-            signingAlgo: "ecdsa",
-            hashingAlgo: "keccak256",
-        })
-        .result();
 
-    runtime.log("Report generated, submitting to chain...");
+    try {
+        const reportResponse = runtime
+            .report({
+                encodedPayload: hexToBase64(reportData),
+                encoderName: "evm",
+                signingAlgo: "ecdsa",
+                hashingAlgo: "keccak256",
+            })
+            .result();
 
-    // Step 2: Submit the report to the consumer contract
-    const writeReportResult = evmClient
-        .writeReport(runtime, {
-            receiver: evmConfig.leaseAgreementAddress,
-            report: reportResponse,
-            gasConfig: {
-                gasLimit: evmConfig.gasLimit || "500000",
-            },
-        })
-        .result();
+        runtime.log("Report generated, submitting to chain...");
 
-    const txHash = bytesToHex(writeReportResult.txHash || new Uint8Array(32));
-    runtime.log(`Write report transaction succeeded: ${txHash}`);
+        // Step 2: Submit the report to the consumer contract
+        const writeReportResult = evmClient
+            .writeReport(runtime, {
+                receiver: evmConfig.leaseAgreementAddress,
+                report: reportResponse,
+                gasConfig: {
+                    gasLimit: evmConfig.gasLimit || "500000",
+                },
+            })
+            .result();
 
-    return txHash;
+        const txHash = bytesToHex(writeReportResult.txHash || new Uint8Array(32));
+        runtime.log(`Write report transaction succeeded: ${txHash}`);
+        return txHash;
+    } catch (error) {
+        runtime.log('Failed to parse HTTP trigger payload');
+        throw new Error('Failed to parse HTTP trigger payload');
+    }
 }
 
 

@@ -1,6 +1,3 @@
-// main.ts
-// Entry point for the ChainLease credit check workflow.
-// Monitors LeaseCreated events and automates tenant credit verification.
 
 import {
   cre, type Runtime, type NodeRuntime,
@@ -10,10 +7,8 @@ import {
   consensusIdenticalAggregation, HTTPSendRequester
 } from "@chainlink/cre-sdk";
 import { keccak256, toHex, decodeEventLog, toBytes } from "viem";
-import { configSchema, Config, CreditCheckResponse, leaseCreatedEventArgsSchema, LeaseData } from "./types";
-import { fetchCreditCheck } from "./credit-check";
-import { submitCreditCheckResult } from "./evm";
-import { leaseCreatedEventAbi, LEASE_CREATED_SIGNATURE } from "./abi";
+import { Config, creditCheckCompletedEventArgsSchema } from "./types";
+import { creditCheckCompletedEventAbi } from "../credit-check-workflow/contract/abi";
 
 
 
@@ -24,23 +19,26 @@ const onLogTrigger = (runtime: Runtime<Config>, log: EVMLog): string => {
   runtime.log(`Log detected from ${bytesToHex(log.address)}`)
   const topics = log.topics.map(t => bytesToHex(t)) as [`0x${string}`, ...`0x${string}`[]];
   const data = bytesToHex(log.data);
-  const decodedLog = decodeEventLog({ abi: leaseCreatedEventAbi, data, topics });
+  const decodedLog = decodeEventLog({ abi: creditCheckCompletedEventAbi, data, topics });
   runtime.log(`Event: ${decodedLog.eventName}`);
-  const validationResult = leaseCreatedEventArgsSchema.safeParse(decodedLog.args);
+  const validationResult = creditCheckCompletedEventArgsSchema.safeParse(decodedLog.args);
 
   if (!validationResult.success) {
     runtime.log(`Event validation failed: ${validationResult.error.message}`);
     throw new Error(`Invalid event arguments: ${validationResult.error.message}`);
   }
 
-  const { leaseId, propertyId, tenant } = validationResult.data;
+  const { leaseId, propertyId, passed } = validationResult.data;
   const httpClient = new HTTPClient();
   //retrieve the data of the tenant and verify their credit score using the credit check API
-  const leaseData: LeaseData = {
-    leaseId,
-    propertyId,
-    tenantAddress: tenant,
-  };
+  
+  if (passed) {
+    runtime.log(`Credit check passed for lease ${leaseId.toString()} on property ${propertyId.toString()}`);    
+    //send an email to the landlord that a tenant has passed the credit check and the lease can be activated
+
+  }
+
+
   const result = httpClient
     .sendRequest(
       runtime,
@@ -54,10 +52,6 @@ const onLogTrigger = (runtime: Runtime<Config>, log: EVMLog): string => {
   if (!result) {
     runtime.log(`Credit check failed for tenant ${tenant} on lease ${leaseId.toString()}`);
   }
-
- 
-  //WRITE TO THE CONTRACT:
-  submitCreditCheckResult(runtime, BigInt(result.leaseId), result.passed, result.verificationId);
 
   runtime.log(`Successfully sent data to webhook. Status: ${result.statusCode}`)
   return "Log processed successfully"

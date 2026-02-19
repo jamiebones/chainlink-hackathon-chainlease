@@ -19,3 +19,9 @@ export const leaseAgreementAbi = parseAbi([
     "function updateCreditCheckStatus(uint256 leaseId, bool passed) external",
     "function getLease(uint256 leaseId) external view returns (tuple(uint256 leaseId, uint256 propertyId, address landlord, address tenant, uint256 monthlyRent, uint256 securityDeposit, uint256 startDate, uint256 endDate, uint256 duration, uint8 state, bytes32 worldIdNullifierHash, bool creditCheckPassed, uint256 lastPaymentDate, uint256 createdAt))",
 ]);
+
+export const CREDIT_CHECK_COMPLETED_SIGNATURE = "CreditCheckCompleted(uint256,uint256,bool,string)";
+
+export const creditCheckCompletedEventAbi = parseAbi([
+    "event CreditCheckCompleted(uint256 indexed leaseId, uint256 indexed propertyId, bool passed, string verificationId)"
+]);

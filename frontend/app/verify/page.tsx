@@ -1,6 +1,5 @@
 'use client';
 
-import { Navbar } from '@/components/Navbar';
 import { WorldIDVerify } from '@/components/WorldIDVerify';
 import { ISuccessResult } from '@worldcoin/idkit';
 import { useAccount } from 'wagmi';
@@ -49,11 +48,8 @@ export default function VerifyPage() {
   };
 
   return (
-    <>
-      <Navbar />
-      
-      <main className="flex min-h-screen flex-col items-center justify-center pt-16 px-4">
-        <div className="max-w-2xl w-full">
+    <main className="flex min-h-screen flex-col items-center justify-center pt-16 px-4">
+      <div className="max-w-2xl w-full">
           <div className="text-center mb-8">
             <h1 className="text-4xl font-bold mb-4">
               Verify Your Identity
@@ -112,6 +108,5 @@ export default function VerifyPage() {
           </div>
         </div>
       </main>
-    </>
   );
 }

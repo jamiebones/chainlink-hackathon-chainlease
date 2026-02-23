@@ -2,12 +2,12 @@
     "evms": [
         {
             "chainSelectorName": "ethereum-testnet-sepolia",
-            "leaseAgreementAddress": "0xYourLeaseAgreementAddress",
+            "leaseAgreementAddress": "0x0000000000000000000000000000000000000000",
             "startBlock": 7000000
         }
     ],
     "backendApi": {
-        "endpoint": "http://localhost:3001",
-        "apiKey": "${{ secrets.BACKEND_API_KEY }}"
+        "endpoint": "http://localhost:3000",
+        "apiKey": "test_api_key_12345"
     }
 }

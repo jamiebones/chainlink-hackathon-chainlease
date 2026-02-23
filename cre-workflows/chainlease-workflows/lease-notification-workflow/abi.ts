@@ -1,8 +1,6 @@
 // abi.ts
 // LeaseActivated event ABI and signature
 
-import { keccak256, toHex } from "viem";
-
 /**
  * LeaseActivated event ABI
  * Emitted when a landlord activates a lease after credit check approval
@@ -53,9 +51,7 @@ export const leaseActivatedEventAbi = [
 ] as const;
 
 /**
- * Compute the LeaseActivated event signature hash
- * Used to filter logs in the workflow trigger
+ * LeaseActivated event signature string
+ * Hash will be computed in main.ts using keccak256
  */
-export const LEASE_ACTIVATED_SIGNATURE = keccak256(
-    toHex("LeaseActivated(uint256,address,address,uint256,uint256,uint256,uint256)")
-);
+export const LEASE_ACTIVATED_SIGNATURE = "LeaseActivated(uint256,address,address,uint256,uint256,uint256,uint256)";

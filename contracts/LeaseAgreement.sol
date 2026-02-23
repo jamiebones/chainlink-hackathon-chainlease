@@ -3,12 +3,13 @@ pragma solidity ^0.8.24;
 
 import {ReentrancyGuard} from "@openzeppelin/contracts/utils/ReentrancyGuard.sol";
 import {ReceiverTemplate} from "./interfaces/ReceiverTemplate.sol";
+import {IPaymentEscrow} from "./interfaces/IPaymentEscrow.sol";
 import "./PropertyNFT.sol";
 
 /**
  * @title LeaseAgreement
  * @notice Manages lease lifecycle and state transitions
- * @dev Integrates with PropertyNFT, World ID verification, and Chainlink CRE workflows
+ * @dev Integrates with PropertyNFT, and Chainlink CRE workflows
  * @dev Inherits from ReceiverTemplate to accept credit check results from CRE workflows
  */
 contract LeaseAgreement is ReentrancyGuard, ReceiverTemplate {
@@ -43,12 +44,12 @@ contract LeaseAgreement is ReentrancyGuard, ReceiverTemplate {
     mapping(uint256 => Lease) public leases;
     mapping(address => uint256[]) public tenantLeases;
     mapping(address => uint256[]) public landlordLeases;
-    mapping(bytes32 => bool) public usedNullifiers; // World ID nullifier tracking
+    mapping(uint256 => mapping(bytes32 => bool)) public propertyNullifiers; // propertyId => World ID nullifier => used
     mapping(uint256 => mapping(uint256 => bool))
         public propertyTenantApplications; // propertyId => tenantAddress hash => applied
 
     PropertyNFT public propertyNFT;
-    address public paymentEscrow;
+    IPaymentEscrow public paymentEscrow;
     address public worldIdVerifier;
 
     event LeaseCreated(
@@ -98,16 +99,7 @@ contract LeaseAgreement is ReentrancyGuard, ReceiverTemplate {
      */
     function setPaymentEscrow(address _paymentEscrow) external onlyOwner {
         require(_paymentEscrow != address(0), "Invalid address");
-        paymentEscrow = _paymentEscrow;
-    }
-
-    /**
-     * @notice Set WorldIDVerifier contract address
-     * @param _worldIdVerifier WorldIDVerifier contract address
-     */
-    function setWorldIdVerifier(address _worldIdVerifier) external onlyOwner {
-        require(_worldIdVerifier != address(0), "Invalid address");
-        worldIdVerifier = _worldIdVerifier;
+        paymentEscrow = IPaymentEscrow(_paymentEscrow);
     }
 
     /**
@@ -124,8 +116,8 @@ contract LeaseAgreement is ReentrancyGuard, ReceiverTemplate {
     ) public nonReentrant returns (uint256) {
         require(worldIdNullifierHash != bytes32(0), "Invalid nullifier");
         require(
-            !usedNullifiers[worldIdNullifierHash],
-            "Already applied with this identity"
+            !propertyNullifiers[propertyId][worldIdNullifierHash],
+            "Already applied for this property"
         );
         require(duration >= 30 && duration <= 3650, "Duration: 30-3650 days");
 
@@ -166,7 +158,7 @@ contract LeaseAgreement is ReentrancyGuard, ReceiverTemplate {
             createdAt: block.timestamp
         });
 
-        usedNullifiers[worldIdNullifierHash] = true;
+        propertyNullifiers[propertyId][worldIdNullifierHash] = true;
         propertyTenantApplications[propertyId][tenantHash] = true;
         tenantLeases[msg.sender].push(newLeaseId);
         landlordLeases[landlord].push(newLeaseId);
@@ -254,7 +246,12 @@ contract LeaseAgreement is ReentrancyGuard, ReceiverTemplate {
         require(lease.creditCheckPassed, "Credit check not passed");
         require(msg.sender == lease.landlord, "Only landlord can activate");
 
-        // TODO: Verify deposit received from PaymentEscrow
+        // Verify deposit received from PaymentEscrow
+        require(address(paymentEscrow) != address(0), "PaymentEscrow not set");
+        require(
+            paymentEscrow.hasDeposit(leaseId),
+            "Security deposit not received"
+        );
 
         lease.state = LeaseState.Active;
         lease.startDate = block.timestamp;
@@ -283,7 +280,7 @@ contract LeaseAgreement is ReentrancyGuard, ReceiverTemplate {
      */
     function recordPayment(uint256 leaseId) public {
         require(
-            msg.sender == paymentEscrow || msg.sender == owner(),
+            msg.sender == address(paymentEscrow) || msg.sender == owner(),
             "Not authorized"
         );
         Lease storage lease = leases[leaseId];

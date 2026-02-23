@@ -1,0 +1,13 @@
+{
+    "schedule": "0 10 * * *",
+    "evms": [
+        {
+            "chainSelectorName": "ethereum-testnet-sepolia",
+            "leaseAgreementAddress": "0x0000000000000000000000000000000000000000"
+        }
+    ],
+    "backendApi": {
+        "endpoint": "http://localhost:3000",
+        "apiKey": "test_api_key_12345"
+    }
+}

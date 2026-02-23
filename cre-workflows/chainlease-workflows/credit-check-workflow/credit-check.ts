@@ -7,6 +7,7 @@ import type { Config, CreditCheckResponse, LeaseData } from "./types";
 /**
  * Performs credit check via external API service
  * @param sendRequester - HTTPSendRequester instance for sending requests
+ * @param config - Workflow configuration
  * @param dataToSend - Lease data including tenant address
  * @returns Credit check response with score and approval status
  */
@@ -16,24 +17,22 @@ export function fetchCreditCheck(sendRequester: HTTPSendRequester,
     dataToSend: LeaseData
 ): CreditCheckResponse {
 
-    const bodyBytes = new TextEncoder().encode(JSON.stringify(dataToSend))
-    const body = Buffer.from(bodyBytes).toString("base64");
+    // Build query parameters for GET request (simplified for simulation)
+    const queryParams = new URLSearchParams({
+        tenantAddress: dataToSend.tenantAddress,
+    });
 
     const req = {
-        url: config.creditCheckApi.endpoint,
-        method: "POST" as const,
-        body,
+        url: `${config.creditCheckApi.endpoint}?${queryParams.toString()}`,
+        method: "GET" as const,
         headers: {
+            "Authorization": `Bearer ${config.creditCheckApi.apiKey}`,
             "Content-Type": "application/json",
-        },
-        cacheSettings: {
-            readFromCache: true, // Enable reading from cache
-            maxAgeMs: 60000, // Accept cached responses up to 60 seconds old
         },
     }
 
     try {
-        const resp = sendRequester.sendRequest(req as any).result();
+        const resp = sendRequester.sendRequest(req).result();
         if (!ok(resp)) {
             throw new Error(`HTTP request failed with status: ${resp.statusCode}`)
         }

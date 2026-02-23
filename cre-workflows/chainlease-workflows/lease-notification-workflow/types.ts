@@ -57,11 +57,11 @@ export interface BackendNotificationRequest {
 
 /**
  * Backend API response
+ * Used for consensus across CRE nodes
  */
-export interface BackendNotificationResponse {
+export interface NotificationResponse {
+    statusCode: number;
     success: boolean;
     message?: string;
-    notificationId?: string;
-    emailSent?: boolean;
-    error?: string;
+    recipient?: string;
 }

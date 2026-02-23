@@ -1,0 +1,13 @@
+{
+    "schedule": "0 10 * * *",
+    "evms": [
+        {
+            "chainSelectorName": "ethereum-mainnet",
+            "leaseAgreementAddress": "0x0000000000000000000000000000000000000000"
+        }
+    ],
+    "backendApi": {
+        "endpoint": "https://api.chainlease.com",
+        "apiKey": "${BACKEND_API_KEY}"
+    }
+}

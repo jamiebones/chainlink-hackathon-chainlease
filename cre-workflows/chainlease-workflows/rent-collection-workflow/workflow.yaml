@@ -1,0 +1,23 @@
+# workflow.yaml
+# Workflow definition for ChainLease rent collection workflow
+
+name: rent-collection-workflow
+version: 1.0.0
+description: Monitors active leases and sends notifications for overdue rent payments
+
+# Workflow targets for simulation and deployment
+staging-settings:
+  user-workflow:
+    workflow-name: "rent-collection-workflow-staging"
+  workflow-artifacts:
+    workflow-path: "./main.ts"
+    config-path: "./config.staging.json"
+    secrets-path: ""
+
+production-settings:
+  user-workflow:
+    workflow-name: "rent-collection-workflow-production"
+  workflow-artifacts:
+    workflow-path: "./main.ts"
+    config-path: "./config.production.json"
+    secrets-path: ""

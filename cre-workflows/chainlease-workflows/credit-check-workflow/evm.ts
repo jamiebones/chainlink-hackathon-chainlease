@@ -1,6 +1,6 @@
 // evm.ts
 
-import { type Runtime, EVMClient, getNetwork, hexToBase64, bytesToHex } from "@chainlink/cre-sdk";
+import { type Runtime, EVMClient, getNetwork, hexToBase64, bytesToHex, TxStatus } from "@chainlink/cre-sdk";
 import { encodeAbiParameters, parseAbiParameters } from "viem";
 import type { Config } from "./types";
 
@@ -45,9 +45,8 @@ export function submitCreditCheckResult(
 
     runtime.log(`Writing report to consumer contract at ${evmConfig.leaseAgreementAddress}`);
 
-    // Step 1: Generate a signed report using the consensus capability
-
     try {
+        // Step 1: Generate a signed report using the consensus capability
         const reportResponse = runtime
             .report({
                 encodedPayload: hexToBase64(reportData),
@@ -70,12 +69,21 @@ export function submitCreditCheckResult(
             })
             .result();
 
-        const txHash = bytesToHex(writeReportResult.txHash || new Uint8Array(32));
-        runtime.log(`Write report transaction succeeded: ${txHash}`);
-        return txHash;
+        // Step 3: Check transaction status
+        if (writeReportResult.txStatus === TxStatus.SUCCESS) {
+            const txHash = bytesToHex(writeReportResult.txHash || new Uint8Array(32));
+            runtime.log(`Credit check result submitted successfully: ${txHash}`);
+            return txHash;
+        } else if (writeReportResult.txStatus === TxStatus.REVERTED) {
+            runtime.log(`Transaction reverted: ${writeReportResult.errorMessage || "Unknown error"}`);
+            throw new Error(`Transaction reverted: ${writeReportResult.errorMessage}`);
+        } else {
+            throw new Error(`Transaction failed with status: ${writeReportResult.txStatus}`);
+        }
     } catch (error) {
-        runtime.log('Failed to parse HTTP trigger payload');
-        throw new Error('Failed to parse HTTP trigger payload');
+        const errorMsg = error instanceof Error ? error.message : String(error);
+        runtime.log(`Failed to submit credit check result: ${errorMsg}`);
+        throw new Error(`Failed to submit credit check result: ${errorMsg}`);
     }
 }
 

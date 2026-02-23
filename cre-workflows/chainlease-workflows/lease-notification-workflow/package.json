@@ -11,8 +11,8 @@
         "deploy:prod": "cre workflow deploy --config config.production.json --target production"
     },
     "dependencies": {
-        "@chainlink/cre-sdk": "^1.0.9",
-        "viem": "^2.0.0",
+        "@chainlink/cre-sdk": "^1.1.1",
+        "viem": "^2.21.54",
         "zod": "^3.22.0"
     },
     "devDependencies": {

@@ -3,13 +3,18 @@
 // Monitors LeaseCreated events and automates tenant credit verification.
 
 import {
-  cre, type Runtime, type NodeRuntime,
-  Runner, getNetwork, bytesToHex, EVMLog,
+  type Runtime,
+  Runner,
+  getNetwork,
+  bytesToHex,
+  type EVMLog,
   handler,
-  HTTPClient, consensusMedianAggregation, hexToBase64, EVMClient,
-  consensusIdenticalAggregation, HTTPSendRequester
+  HTTPClient,
+  hexToBase64,
+  EVMClient,
+  consensusIdenticalAggregation
 } from "@chainlink/cre-sdk";
-import { keccak256, toHex, decodeEventLog, toBytes } from "viem";
+import { keccak256, decodeEventLog, toBytes } from "viem";
 import { configSchema, Config, CreditCheckResponse, leaseCreatedEventArgsSchema, LeaseData } from "./types";
 import { fetchCreditCheck } from "./credit-check";
 import { submitCreditCheckResult } from "./evm";
@@ -50,16 +55,17 @@ const onLogTrigger = (runtime: Runtime<Config>, log: EVMLog): string => {
       leaseData)
     .result()
 
-
-  if (!result) {
-    runtime.log(`Credit check failed for tenant ${tenant} on lease ${leaseId.toString()}`);
+  // Check if API call was successful
+  if (!result || result.statusCode !== 200) {
+    runtime.log(`Credit check API failed for tenant ${tenant} on lease ${leaseId.toString()}`);
+    // Submit failure result to contract
+    submitCreditCheckResult(runtime, leaseId, false, "api-error");
+    return `Credit check API failed for lease ${leaseId.toString()}`;
   }
 
- 
-  //WRITE TO THE CONTRACT:
+  // Submit successful result to contract
   submitCreditCheckResult(runtime, BigInt(result.leaseId), result.passed, result.verificationId);
-
-  runtime.log(`Successfully sent data to webhook. Status: ${result.statusCode}`)
+  runtime.log(`Credit check completed: ${result.passed ? 'PASSED' : 'FAILED'} (Score: ${result.creditScore})`)
   return "Log processed successfully"
 }
 
@@ -84,6 +90,7 @@ const initWorkflow = (config: Config) => {
         topics: [
           { values: [hexToBase64(leaseEventHash)] },
         ],
+        confidence: "CONFIDENCE_LEVEL_FINALIZED",
       }),
       onLogTrigger
     ),

@@ -1,6 +1,6 @@
 // main.ts
 // Entry point for the ChainLease lease notification workflow
-// Monitors LeaseActivated events and triggers backend API for email notifications
+// Monitors LeaseActivated events and sends email notifications via Gmail SMTP
 
 import {
     cre,
@@ -11,7 +11,9 @@ import {
     bytesToHex,
     EVMLog,
     HTTPClient,
-    consensusMedianAggregation,
+    type HTTPSendRequester,
+    consensusIdenticalAggregation,
+    ok,
 } from "@chainlink/cre-sdk";
 import { keccak256, toHex, decodeEventLog } from "viem";
 import {
@@ -19,6 +21,7 @@ import {
     type Config,
     type LeaseActivatedEventArgs,
     type BackendNotificationRequest,
+    type NotificationResponse,
     leaseActivatedEventArgsSchema,
 } from "./types";
 import { leaseActivatedEventAbi, LEASE_ACTIVATED_SIGNATURE } from "./abi";
@@ -29,46 +32,70 @@ import { leaseActivatedEventAbi, LEASE_ACTIVATED_SIGNATURE } from "./abi";
 
 /**
  * Sends lease activation notification to backend API
- * Backend handles email sending via Gmail SMTP and database storage
- * Runs in node mode for HTTP consensus
+ * Backend handles:
+ *   - Fetching tenant email from database
+ *   - Sending email via Gmail SMTP (nodemailer)
+ *   - Storing notification record
  * 
- * @param nodeRuntime CRE node runtime with config
+ * IMPORTANT: Uses cacheSettings to prevent duplicate emails
+ * 
+ * @param sendRequester HTTPSendRequester instance for sending HTTP requests
+ * @param config Workflow configuration
  * @param payload Notification request payload
- * @returns HTTP status code for consensus
+ * @returns Notification response for consensus
  */
-const triggerBackendNotification = (
-    nodeRuntime: NodeRuntime<Config>,
+const sendNotificationEmail = (
+    sendRequester: HTTPSendRequester,
+    config: Config,
     payload: BackendNotificationRequest
-): number => {
-    const httpClient = new HTTPClient();
-
+): NotificationResponse => {
     try {
+        // 1. Get API key from config
+        const apiKey = config.backendApi.apiKey;
+
+        // 2. Serialize payload to JSON and encode to base64 
+        const payloadJson = JSON.stringify(payload);
+        const bodyBytes = new TextEncoder().encode(payloadJson);
+        const body = Buffer.from(bodyBytes).toString('base64');
+
+        // 3. Construct HTTP POST request with cacheSettings to prevent duplicate sends
         const req = {
-            url: `${nodeRuntime.config.backendApi.endpoint}/api/notifications/lease-activated`,
+            url: `${config.backendApi.endpoint}/api/notifications/lease-activated`,
             method: "POST" as const,
+            body,
             headers: {
                 "Content-Type": "application/json",
-                ...(nodeRuntime.config.backendApi.apiKey && {
-                    "Authorization": `Bearer ${nodeRuntime.config.backendApi.apiKey}`,
-                }),
+                ...(apiKey && { "Authorization": `Bearer ${apiKey}` }),
             },
-            body: JSON.stringify(payload),
+            cacheSettings: {
+                readFromCache: true,
+                maxAgeMs: 120000, // 2 minutes - prevents duplicate emails for same event
+            },
         };
 
-        const response = httpClient.sendRequest(nodeRuntime, req).result();
+        // 4. Send HTTP request
+        const response = sendRequester.sendRequest(req as any).result();
 
-        // Log response for debugging
-        if (response.statusCode >= 200 && response.statusCode < 300) {
-            const responseBody = new TextDecoder().decode(response.body);
-            nodeRuntime.log(`Backend response: ${responseBody}`);
+        // 5. Check response status
+        if (!ok(response)) {
+            const errorBody = new TextDecoder().decode(response.body);
+            throw new Error(`Backend API error (${response.statusCode}): ${errorBody}`);
         }
 
-        // Return status code for consensus (numeric type required)
-        return response.statusCode;
+        // 6. Parse response body
+        const responseBody = new TextDecoder().decode(response.body);
+        const responseData = JSON.parse(responseBody) as NotificationResponse;
+
+        return {
+            statusCode: response.statusCode,
+            success: responseData.success,
+            message: responseData.message,
+            recipient: responseData.recipient,
+        };
+
     } catch (error) {
         const errorMsg = error instanceof Error ? error.message : String(error);
-        nodeRuntime.log(`Error triggering backend notification: ${errorMsg}`);
-        throw error;
+        throw new Error(`Error sending notification: ${errorMsg}`);
     }
 };
 
@@ -78,12 +105,9 @@ const triggerBackendNotification = (
 
 /**
  * Handles LeaseActivated events from the LeaseAgreement contract
- * Forwards event data to backend API which handles:
- *   - Fetching tenant email from database
- *   - Sending email via Gmail SMTP
- *   - Storing notification record
+ * Triggers email notification through backend API
  *
- * @param runtime CRE runtime instance with config and secrets
+ * @param runtime CRE runtime instance with config
  * @param log EVM log containing the LeaseActivated event
  * @returns Success message string
  */
@@ -95,7 +119,7 @@ const onLeaseActivatedTrigger = (runtime: Runtime<Config>, log: EVMLog): string 
         // Step 1: Decode Event Log
         // ========================================
 
-        const topics = log.topics.map((t) => bytesToHex(t)) as [`0x${string}`, ...`0x${string}`[]];
+        const topics = log.topics.map((t: Uint8Array) => bytesToHex(t)) as [`0x${string}`, ...`0x${string}`[]];
         const data = bytesToHex(log.data);
 
         const decodedLog = decodeEventLog({
@@ -106,12 +130,13 @@ const onLeaseActivatedTrigger = (runtime: Runtime<Config>, log: EVMLog): string 
 
         runtime.log(`Event: ${decodedLog.eventName}`);
 
-        // Validate event arguments
+        // Validate event arguments using Zod schema
         const validationResult = leaseActivatedEventArgsSchema.safeParse(decodedLog.args);
 
         if (!validationResult.success) {
-            runtime.log(`Event validation failed: ${validationResult.error.message}`);
-            throw new Error(`Invalid event arguments: ${validationResult.error.message}`);
+            const errorMsg = `Invalid event arguments: ${validationResult.error.message}`;
+            runtime.log(errorMsg);
+            throw new Error(errorMsg);
         }
 
         const eventArgs = validationResult.data;
@@ -121,10 +146,8 @@ const onLeaseActivatedTrigger = (runtime: Runtime<Config>, log: EVMLog): string 
         runtime.log(`Property ID: ${eventArgs.propertyId.toString()}`);
 
         // ========================================
-        // Step 2: Trigger Backend API
+        // Step 2: Prepare Notification Payload
         // ========================================
-
-        runtime.log("Sending notification request to backend API...");
 
         const notificationPayload: BackendNotificationRequest = {
             eventType: "lease-activated",
@@ -135,28 +158,43 @@ const onLeaseActivatedTrigger = (runtime: Runtime<Config>, log: EVMLog): string 
             startDate: Number(eventArgs.startDate),
             endDate: Number(eventArgs.endDate),
             monthlyRent: eventArgs.monthlyRent.toString(),
-            txHash: "", // Transaction hash not available from event log
+            txHash: "", // Transaction hash not available from EVMLog
             blockNumber: Number(log.blockNumber),
             timestamp: Date.now(),
         };
 
-        const statusCode = runtime.runInNodeMode(
-            (nodeRuntime) => triggerBackendNotification(nodeRuntime, notificationPayload),
-            consensusMedianAggregation()
-        )().result();
+        // ========================================
+        // Step 3: Send Email via Backend API
+        // ========================================
 
-        // Convert to number for comparison
-        const httpStatus = Number(statusCode);
+        runtime.log(`Sending email notification for lease #${eventArgs.leaseId}...`);
 
-        if (httpStatus >= 200 && httpStatus < 300) {
-            runtime.log(`Backend API responded successfully: ${httpStatus}`);
+        // Use HTTPClient.sendRequest with consensusIdenticalAggregation for HTTP POST
+        // cacheSettings in sendNotificationEmail prevents duplicate emails
+        const httpClient = new HTTPClient();
 
-            const successMessage = `Lease activation notification triggered for lease #${eventArgs.leaseId}`;
-            runtime.log(successMessage);
-            return successMessage;
+        const result = httpClient
+            .sendRequest(
+                runtime,
+                (sendRequester: HTTPSendRequester, config: Config) =>
+                    sendNotificationEmail(sendRequester, config, notificationPayload),
+                consensusIdenticalAggregation<NotificationResponse>()
+            )(runtime.config)
+            .result();
+
+        // ========================================
+        // Step 4: Verify Success
+        // ========================================
+
+        if (result.success && result.statusCode >= 200 && result.statusCode < 300) {
+            const successMsg = `✅ Email notification sent successfully for lease #${eventArgs.leaseId}`;
+            runtime.log(successMsg);
+            runtime.log(`   Recipient: ${result.recipient || 'unknown'}`);
+            return successMsg;
         } else {
-            runtime.log(`Backend API error: ${httpStatus}`);
-            throw new Error(`Backend API returned ${httpStatus}`);
+            const errorMsg = `Email sending failed: ${result.message || 'Unknown error'}`;
+            runtime.log(`❌ ${errorMsg}`);
+            throw new Error(errorMsg);
         }
 
     } catch (err) {
@@ -187,7 +225,7 @@ const initWorkflow = (config: Config) => {
     // Create EVM client for the target chain
     const evmClient = new cre.capabilities.EVMClient(network.chainSelector.selector);
 
-    // Compute the event topic hash for LeaseActivated
+    // Compute the event topic hash for LeaseActivated from the signature string
     const leaseActivatedHash = keccak256(toHex(LEASE_ACTIVATED_SIGNATURE));
 
     // Register handler to trigger only on LeaseActivated events from our contract
